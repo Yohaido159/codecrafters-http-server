@@ -14,6 +14,17 @@ pub fn main() !void {
     });
     defer listener.deinit();
     //
-    _ = try listener.accept();
+    const connection = try listener.accept();
     try stdout.print("client connected!", .{});
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var httpv1 = http.Httpv1.init();
+    const httpResponse = httpv1.setStatusCode("200").setStatusMessage("OK").build(allocator);
+
+    try connection.stream.writeAll(httpResponse);
 }
+
+const http = @import("./http.zig");
