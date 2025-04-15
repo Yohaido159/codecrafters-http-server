@@ -14,17 +14,38 @@ pub fn main() !void {
     });
     defer listener.deinit();
     //
-    const connection = try listener.accept();
-    try stdout.print("client connected!", .{});
+    while (true) {
+        const connection = try listener.accept();
+        try stdout.print("client connected!", .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+        var allocator = gpa.allocator();
 
-    var httpv1 = http.Httpv1.init();
-    const httpResponse = httpv1.setStatusCode("200").setStatusMessage("OK").build(allocator);
+        var httpv1 = Response.init();
 
-    try connection.stream.writeAll(httpResponse);
+        const requestBuf = allocator.alloc(u8, 1024) catch unreachable;
+        defer allocator.free(requestBuf);
+        _ = try connection.stream.read(requestBuf);
+        var request = Request.init(allocator);
+        try request.parse(requestBuf);
+        defer request.deinit();
+
+        request.debugPrint();
+
+        if (mem.eql(u8, request.path, "/")) {
+            const httpResponse = httpv1.setStatusCode("200").setStatusMessage("OK").build(allocator);
+            defer allocator.free(httpResponse);
+            try connection.stream.writeAll(httpResponse);
+        } else {
+            const httpResponse = httpv1.setStatusCode("404").setStatusMessage("Not Found").build(allocator);
+            defer allocator.free(httpResponse);
+            try connection.stream.writeAll(httpResponse);
+        }
+        connection.stream.close();
+    }
 }
 
-const http = @import("./http.zig");
+const Response = @import("./http/response.zig").Response;
+const Request = @import("./http/request.zig").Request;
+const mem = std.mem;

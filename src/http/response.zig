@@ -1,36 +1,19 @@
 const std = @import("std");
 const mem = std.mem;
 
-pub const Httpv1 = struct {
-    method: []const u8,
-    path: []const u8,
+pub const Response = struct {
     httpVersion: []const u8,
     statusCode: []const u8,
     statusMessage: []const u8,
 
-    // allocator: mem.Allocator,
-
     const Self = @This();
 
     pub fn init() Self {
-        return Httpv1{
-            // .allocator = allocator,
-            .method = undefined,
-            .path = undefined,
+        return Self{
             .httpVersion = "HTTP/1.1",
             .statusCode = undefined,
             .statusMessage = undefined,
         };
-    }
-
-    pub fn setMethod(self: *Self, method: []const u8) *Self {
-        self.method = method;
-        return self;
-    }
-
-    pub fn setPath(self: *Self, path: []const u8) *Self {
-        self.path = path;
-        return self;
     }
 
     pub fn setStatusCode(self: *Self, statusCode: []const u8) *Self {
@@ -44,11 +27,7 @@ pub const Httpv1 = struct {
     }
 
     pub fn build(self: *Self, allocator: mem.Allocator) []const u8 {
-        const httpRequest = mem.concat(allocator, u8, &.{
-            // self.method,
-            // " ",
-            // self.path,
-            // " ",
+        const httpResponse = mem.concat(allocator, u8, &.{
             self.httpVersion,
             " ",
             self.statusCode,
@@ -58,16 +37,15 @@ pub const Httpv1 = struct {
             "\r\n",
         }) catch unreachable;
 
-        return httpRequest;
+        return httpResponse;
     }
 };
 
-test "should build simple http" {
+test "simple response" {
     const allocator = std.testing.allocator;
-    var http = Httpv1.init();
+    var http = Response.init();
 
     const result = http.setMethod("GET")
-        .setPath("/index.html")
         .setStatusCode("200")
         .setStatusMessage("OK")
         .build(allocator);
