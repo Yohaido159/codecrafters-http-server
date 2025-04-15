@@ -25,7 +25,7 @@ pub const Request = struct {
     }
 
     pub fn parse(self: *Self, request_data: []const u8) !void {
-        var lines = mem.splitAny(u8, request_data, "\r\n");
+        var lines = mem.splitSequence(u8, request_data, "\r\n");
         const request_line = lines.next() orelse return error.InvalidRequest;
         try self.parseRequestLine(request_line);
 

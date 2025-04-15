@@ -23,6 +23,7 @@ pub fn main() !void {
         var allocator = gpa.allocator();
 
         var httpv1 = Response.init(allocator);
+        defer httpv1.deinit();
 
         const requestBuf = allocator.alloc(u8, 1024) catch unreachable;
         defer allocator.free(requestBuf);
@@ -39,7 +40,22 @@ pub fn main() !void {
             try connection.stream.writeAll(httpResponse);
         } else if (mem.startsWith(u8, request.path, "/echo/")) {
             const str = request.path[6..];
-            const httpResponse = try httpv1.setStatusCode("200").setStatusMessage("OK").setBody(str).addHeader("Content-Type", "text/plain").build();
+            const httpResponse = try httpv1
+                .setStatusCode("200")
+                .setStatusMessage("OK")
+                .setBody(str)
+                .addHeader("Content-Type", "text/plain")
+                .build();
+            defer allocator.free(httpResponse);
+            try connection.stream.writeAll(httpResponse);
+        } else if (mem.startsWith(u8, request.path, "/user-agent")) {
+            const userAgent = request.getHeader("User-Agent") orelse "Unknown User-Agent";
+            const httpResponse = try httpv1
+                .setStatusCode("200")
+                .setStatusMessage("OK")
+                .setBody(userAgent)
+                .addHeader("Content-Type", "text/plain")
+                .build();
             defer allocator.free(httpResponse);
             try connection.stream.writeAll(httpResponse);
         } else {
