@@ -1,3 +1,4 @@
+const HttpError = @import("./http.zig").HttpError;
 pub const Request = struct {
     allocator: mem.Allocator,
     method: HttpMethod,

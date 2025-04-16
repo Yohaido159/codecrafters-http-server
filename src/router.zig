@@ -13,12 +13,10 @@ const HttpMethod = http.HttpMethod;
 const HttpError = http.HttpError;
 
 pub fn handleRequest(allocator: mem.Allocator, connection: Connection, request: Request, directory: ?[]const u8) HttpError!void {
-    // Log the request path for debugging
     log.debug("Processing request for path: {s}", .{request.path});
 
-    // Route dispatching based on URL path
     if (mem.eql(u8, request.path, "/")) {
-        try handleRoot(allocator, connection);
+        try handleRoot(allocator, connection, request);
     } else if (mem.startsWith(u8, request.path, "/echo/")) {
         try handleEcho(allocator, connection, request);
     } else if (mem.eql(u8, request.path, "/user-agent")) {
@@ -30,8 +28,8 @@ pub fn handleRequest(allocator: mem.Allocator, connection: Connection, request: 
     }
 }
 
-fn handleRoot(allocator: mem.Allocator, connection: Connection) HttpError!void {
-    var response = Response.init(allocator);
+fn handleRoot(allocator: mem.Allocator, connection: Connection, request: Request) HttpError!void {
+    var response = Response.init(allocator, request);
     defer response.deinit();
 
     const http_response = response
@@ -46,7 +44,7 @@ fn handleRoot(allocator: mem.Allocator, connection: Connection) HttpError!void {
 }
 
 fn handleEcho(allocator: mem.Allocator, connection: Connection, request: Request) HttpError!void {
-    var response = Response.init(allocator);
+    var response = Response.init(allocator, request);
     defer response.deinit();
 
     const content = request.path[6..]; // Extract content after "/echo/"
@@ -66,7 +64,7 @@ fn handleEcho(allocator: mem.Allocator, connection: Connection, request: Request
 
 // Handler for the user-agent endpoint
 fn handleUserAgent(allocator: mem.Allocator, connection: Connection, request: Request) HttpError!void {
-    var response = Response.init(allocator);
+    var response = Response.init(allocator, request);
     defer response.deinit();
 
     const user_agent = request.getHeader("User-Agent") orelse "Unknown User-Agent";
@@ -108,15 +106,15 @@ fn handleFiles(allocator: mem.Allocator, connection: Connection, request: Reques
     log.debug("File operation on: {s}", .{full_path});
 
     switch (request.method) {
-        .GET => try handleFileGet(allocator, connection, full_path),
+        .GET => try handleFileGet(allocator, connection, full_path, request),
         .POST => try handleFilePost(allocator, connection, request, full_path),
         else => return HttpError.InvalidMethod,
     }
 }
 
 // Handle GET requests for files
-fn handleFileGet(allocator: mem.Allocator, connection: Connection, path: []const u8) HttpError!void {
-    var response = Response.init(allocator);
+fn handleFileGet(allocator: mem.Allocator, connection: Connection, path: []const u8, request: Request) HttpError!void {
+    var response = Response.init(allocator, request);
     defer response.deinit();
 
     // Try to open the file
@@ -158,7 +156,7 @@ fn handleFileGet(allocator: mem.Allocator, connection: Connection, path: []const
 
 // Handle POST requests for files
 fn handleFilePost(allocator: mem.Allocator, connection: Connection, request: Request, path: []const u8) HttpError!void {
-    var response = Response.init(allocator);
+    var response = Response.init(allocator, request);
     defer response.deinit();
 
     // Ensure we have a body
@@ -237,88 +235,3 @@ fn getContentType(path: []const u8) []const u8 {
     // Default content type
     return "application/octet-stream";
 }
-//     var response = Response.init(allocator);
-//     defer response.deinit();
-//
-//     if (mem.eql(u8, request.path, "/")) {
-//         const httpResponse = try response.setStatusCode("200").setStatusMessage("OK").build();
-//         defer allocator.free(httpResponse);
-//         try connection.stream.writeAll(httpResponse);
-//     } else if (mem.startsWith(u8, request.path, "/echo/")) {
-//         const str = request.path[6..];
-//         const httpResponse = try response
-//             .setStatusCode("200")
-//             .setStatusMessage("OK")
-//             .setBody(str)
-//             .addHeader("Content-Type", "text/plain")
-//             .build();
-//         defer allocator.free(httpResponse);
-//         try connection.stream.writeAll(httpResponse);
-//     } else if (mem.startsWith(u8, request.path, "/user-agent")) {
-//         const userAgent = request.getHeader("User-Agent") orelse "Unknown User-Agent";
-//         const httpResponse = try response
-//             .setStatusCode("200")
-//             .setStatusMessage("OK")
-//             .setBody(userAgent)
-//             .addHeader("Content-Type", "text/plain")
-//             .build();
-//         defer allocator.free(httpResponse);
-//         try connection.stream.writeAll(httpResponse);
-//     } else if (mem.startsWith(u8, request.path, "/files/")) {
-//         const fileName = request.path[7..];
-//         var it = std.process.args();
-//         _ = it.next(); // skip the first argument (the program name)
-//         // skip the second argument (the file path)
-//         _ = it.next();
-//         const dirPath = it.next().?;
-//         const fullPath = std.fs.path.join(allocator, &.{ dirPath, fileName }) catch unreachable;
-//         defer allocator.free(fullPath);
-//
-//         switch (request.method) {
-//             .GET => {
-//                 const file = std.fs.cwd().openFile(fullPath, .{}) catch {
-//                     const httpResponse = try response
-//                         .setStatusCode("404")
-//                         .setStatusMessage("Not Found")
-//                         .build();
-//                     defer allocator.free(httpResponse);
-//                     try connection.stream.writeAll(httpResponse);
-//                     return;
-//                 };
-//                 defer file.close();
-//
-//                 const fileSize = try file.getEndPos();
-//                 const body = try file.readToEndAlloc(allocator, fileSize);
-//                 defer allocator.free(body);
-//                 const httpResponse = try response
-//                     .setStatusCode("200")
-//                     .setStatusMessage("OK")
-//                     .setBody(body)
-//                     .addHeader("Content-Type", "application/octet-stream")
-//                     .build();
-//                 defer allocator.free(httpResponse);
-//                 try connection.stream.writeAll(httpResponse);
-//             },
-//             .POST => {
-//                 const newFile = try std.fs.cwd().createFile(fullPath, .{});
-//                 defer newFile.close();
-//
-//                 const body = request.body.?;
-//                 try newFile.writeAll(body);
-//
-//                 const httpResponse = try response
-//                     .setStatusCode("201")
-//                     .setStatusMessage("Created")
-//                     .build();
-//
-//                 defer allocator.free(httpResponse);
-//                 try connection.stream.writeAll(httpResponse);
-//             },
-//             else => return error.InvalidMethod,
-//         }
-//     } else {
-//         const httpResponse = try response.setStatusCode("404").setStatusMessage("Not Found").build();
-//         defer allocator.free(httpResponse);
-//         try connection.stream.writeAll(httpResponse);
-//     }
-// }

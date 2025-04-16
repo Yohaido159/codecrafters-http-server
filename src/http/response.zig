@@ -1,3 +1,5 @@
+const Request = @import("./request.zig").Request;
+
 pub const Response = struct {
     httpVersion: []const u8,
     statusCode: []const u8,
@@ -5,10 +7,11 @@ pub const Response = struct {
     headers: std.StringHashMap([]const u8),
     body: ?[]const u8,
     allocator: mem.Allocator,
+    request: Request,
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator) Self {
+    pub fn init(allocator: mem.Allocator, request: Request) Self {
         return Self{
             .httpVersion = "HTTP/1.1",
             .statusCode = undefined,
@@ -16,6 +19,7 @@ pub const Response = struct {
             .headers = std.StringHashMap([]const u8).init(allocator),
             .body = null,
             .allocator = allocator,
+            .request = request,
         };
     }
     pub fn deinit(self: *Self) void {
@@ -46,6 +50,12 @@ pub const Response = struct {
         var result = ArrayList(u8).init(self.allocator);
         errdefer result.deinit();
 
+        if (self.request.getHeader("Accept-Encoding")) |accept_encoding| {
+            if (mem.eql(u8, accept_encoding, "gzip")) {
+                _ = self.addHeader("Content-Encoding", "gzip");
+            }
+        }
+        //
         // Status line
         result.appendSlice(self.httpVersion) catch unreachable;
         result.appendSlice(" ") catch unreachable;
@@ -61,6 +71,7 @@ pub const Response = struct {
             result.appendSlice(entry.value_ptr.*) catch unreachable;
             result.appendSlice("\r\n") catch unreachable;
         }
+
         if (self.body) |body| {
             const content_length = std.fmt.allocPrint(self.allocator, "{d}", .{body.len}) catch unreachable;
             defer self.allocator.free(content_length);

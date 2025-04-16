@@ -21,7 +21,6 @@ pub const HttpServer = struct {
         const address = try net.Address.resolveIp(args.host, args.port);
         const listener = try address.listen(.{ .reuse_address = true });
 
-        // Initialize thread pool for connection handling
         const thread_pool = try ThreadPool.init(allocator, args.thread_count);
 
         return Self{
@@ -39,7 +38,6 @@ pub const HttpServer = struct {
     }
 
     pub fn start(self: *Self) !void {
-        // Start the thread pool
         try self.thread_pool.start();
         while (true) {
             const connection = self.listener.accept() catch |err| {

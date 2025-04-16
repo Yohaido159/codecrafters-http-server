@@ -8,14 +8,12 @@ const Response = http.Response;
 
 const router = @import("./router.zig");
 
-// Context structure passed to worker threads
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
     connection: net.Server.Connection,
     directory: ?[]const u8,
 };
 
-// Worker function to handle HTTP connections
 pub fn handleConnection(context: *ConnectionContext) void {
     defer context.allocator.destroy(context);
 
@@ -46,7 +44,7 @@ pub fn handleConnection(context: *ConnectionContext) void {
     var request = Request.init(arena_allocator);
     request.parse(request_buf[0..bytes_read]) catch |err| {
         log.err("Failed to parse request: {}", .{err});
-        sendErrorResponse(arena_allocator, connection, 400, "Bad Request") catch {};
+        sendErrorResponse(arena_allocator, connection, 400, "Bad Request", request) catch {};
         return;
     };
 
@@ -73,12 +71,12 @@ pub fn handleConnection(context: *ConnectionContext) void {
             else => "Internal Server Error",
         };
 
-        sendErrorResponse(arena_allocator, connection, status_code, status_message) catch {};
+        sendErrorResponse(arena_allocator, connection, status_code, status_message, request) catch {};
     };
 }
 
-fn sendErrorResponse(allocator: std.mem.Allocator, connection: net.Server.Connection, status_code: u16, status_message: []const u8) !void {
-    var response = Response.init(allocator);
+fn sendErrorResponse(allocator: std.mem.Allocator, connection: net.Server.Connection, status_code: u16, status_message: []const u8, request: Request) !void {
+    var response = Response.init(allocator, request);
 
     const code = try std.fmt.allocPrint(allocator, "{d}", .{status_code});
     defer allocator.free(code);
