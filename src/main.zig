@@ -3,10 +3,8 @@ const net = std.net;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
     try stdout.print("Logs from your program will appear here!\n", .{});
 
-    // threads
     const thread_count = 4;
     var threads: [thread_count]std.Thread = undefined;
     for (0..4) |i| {

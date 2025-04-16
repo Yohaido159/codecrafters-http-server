@@ -33,6 +33,38 @@ pub fn handleRoutes(allocator: mem.Allocator, connection: Connection, request: R
             .build();
         defer allocator.free(httpResponse);
         try connection.stream.writeAll(httpResponse);
+    } else if (mem.startsWith(u8, request.path, "/files/")) {
+        const fileName = request.path[7..];
+        var it = std.process.args();
+        _ = it.next(); // skip the first argument (the program name)
+        // skip the second argument (the file path)
+        _ = it.next();
+        const dirPath = it.next().?;
+        const fullPath = std.fs.path.join(allocator, &.{ dirPath, fileName }) catch unreachable;
+        defer allocator.free(fullPath);
+
+        const file = std.fs.cwd().openFile(fullPath, .{}) catch {
+            const httpResponse = try response
+                .setStatusCode("404")
+                .setStatusMessage("Not Found")
+                .build();
+            defer allocator.free(httpResponse);
+            try connection.stream.writeAll(httpResponse);
+            return;
+        };
+        defer file.close();
+
+        const fileSize = try file.getEndPos();
+        const body = try file.readToEndAlloc(allocator, fileSize);
+        defer allocator.free(body);
+        const httpResponse = try response
+            .setStatusCode("200")
+            .setStatusMessage("OK")
+            .setBody(body)
+            .addHeader("Content-Type", "application/octet-stream")
+            .build();
+        defer allocator.free(httpResponse);
+        try connection.stream.writeAll(httpResponse);
     } else {
         const httpResponse = try response.setStatusCode("404").setStatusMessage("Not Found").build();
         defer allocator.free(httpResponse);
