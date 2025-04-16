@@ -33,36 +33,8 @@ pub fn main() !void {
         defer request.deinit();
 
         request.debugPrint();
+        try router.handleRoutes(allocator, connection, request);
 
-        if (mem.eql(u8, request.path, "/")) {
-            const httpResponse = try httpv1.setStatusCode("200").setStatusMessage("OK").build();
-            defer allocator.free(httpResponse);
-            try connection.stream.writeAll(httpResponse);
-        } else if (mem.startsWith(u8, request.path, "/echo/")) {
-            const str = request.path[6..];
-            const httpResponse = try httpv1
-                .setStatusCode("200")
-                .setStatusMessage("OK")
-                .setBody(str)
-                .addHeader("Content-Type", "text/plain")
-                .build();
-            defer allocator.free(httpResponse);
-            try connection.stream.writeAll(httpResponse);
-        } else if (mem.startsWith(u8, request.path, "/user-agent")) {
-            const userAgent = request.getHeader("User-Agent") orelse "Unknown User-Agent";
-            const httpResponse = try httpv1
-                .setStatusCode("200")
-                .setStatusMessage("OK")
-                .setBody(userAgent)
-                .addHeader("Content-Type", "text/plain")
-                .build();
-            defer allocator.free(httpResponse);
-            try connection.stream.writeAll(httpResponse);
-        } else {
-            const httpResponse = try httpv1.setStatusCode("404").setStatusMessage("Not Found").build();
-            defer allocator.free(httpResponse);
-            try connection.stream.writeAll(httpResponse);
-        }
         connection.stream.close();
     }
 }
@@ -70,3 +42,4 @@ pub fn main() !void {
 const Response = @import("./http/response.zig").Response;
 const Request = @import("./http/request.zig").Request;
 const mem = std.mem;
+const router = @import("./router.zig");
