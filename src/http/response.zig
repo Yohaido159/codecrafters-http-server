@@ -42,40 +42,40 @@ pub const Response = struct {
         return self;
     }
 
-    pub fn build(self: *Self) ![]const u8 {
+    pub fn build(self: *Self) []const u8 {
         var result = ArrayList(u8).init(self.allocator);
         errdefer result.deinit();
 
         // Status line
-        try result.appendSlice(self.httpVersion);
-        try result.appendSlice(" ");
-        try result.appendSlice(self.statusCode);
-        try result.appendSlice(" ");
-        try result.appendSlice(self.statusMessage);
-        try result.appendSlice("\r\n");
+        result.appendSlice(self.httpVersion) catch unreachable;
+        result.appendSlice(" ") catch unreachable;
+        result.appendSlice(self.statusCode) catch unreachable;
+        result.appendSlice(" ") catch unreachable;
+        result.appendSlice(self.statusMessage) catch unreachable;
+        result.appendSlice("\r\n") catch unreachable;
         var headers_iterator = self.headers.iterator();
 
         while (headers_iterator.next()) |entry| {
-            try result.appendSlice(entry.key_ptr.*);
-            try result.appendSlice(": ");
-            try result.appendSlice(entry.value_ptr.*);
-            try result.appendSlice("\r\n");
+            result.appendSlice(entry.key_ptr.*) catch unreachable;
+            result.appendSlice(": ") catch unreachable;
+            result.appendSlice(entry.value_ptr.*) catch unreachable;
+            result.appendSlice("\r\n") catch unreachable;
         }
         if (self.body) |body| {
-            const content_length = try std.fmt.allocPrint(self.allocator, "{d}", .{body.len});
+            const content_length = std.fmt.allocPrint(self.allocator, "{d}", .{body.len}) catch unreachable;
             defer self.allocator.free(content_length);
-            try result.appendSlice("Content-Length: ");
-            try result.appendSlice(content_length);
-            try result.appendSlice("\r\n");
+            result.appendSlice("Content-Length: ") catch unreachable;
+            result.appendSlice(content_length) catch unreachable;
+            result.appendSlice("\r\n") catch unreachable;
         }
         // Empty line separating headers from body
-        try result.appendSlice("\r\n");
+        result.appendSlice("\r\n") catch unreachable;
 
         // Body
         if (self.body) |body| {
-            try result.appendSlice(body);
+            result.appendSlice(body) catch unreachable;
         }
-        return result.toOwnedSlice();
+        return result.toOwnedSlice() catch unreachable;
     }
 };
 
@@ -87,7 +87,7 @@ test "simple response" {
     const allocator = std.testing.allocator;
     var http = Response.init(allocator);
 
-    const result = try http.setStatusCode("200")
+    const result = http.setStatusCode("200")
         .setStatusMessage("OK")
         .build();
 
@@ -102,7 +102,7 @@ test "response with headers" {
     var response = Response.init(allocator);
     defer response.deinit();
 
-    const result = try response
+    const result = response
         .setStatusCode("404")
         .setStatusMessage("Not Found")
         .addHeader("Content-Type", "text/html")
