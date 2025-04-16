@@ -42,9 +42,15 @@ pub const Request = struct {
         if (body_start == null) {
             body_start = if (mem.indexOf(u8, request_data, "\n\n")) |idx| idx + 2 else null;
         }
+
+        const contentLength = self.getContentLength();
+
         if (body_start) |start| {
-            if (start < request_data.len) {
-                self.body = request_data[start..];
+            if (contentLength) |len| {
+                if (start < request_data.len) {
+                    const end = start + len;
+                    self.body = request_data[start..end];
+                }
             }
         }
     }

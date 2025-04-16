@@ -43,28 +43,48 @@ pub fn handleRoutes(allocator: mem.Allocator, connection: Connection, request: R
         const fullPath = std.fs.path.join(allocator, &.{ dirPath, fileName }) catch unreachable;
         defer allocator.free(fullPath);
 
-        const file = std.fs.cwd().openFile(fullPath, .{}) catch {
-            const httpResponse = try response
-                .setStatusCode("404")
-                .setStatusMessage("Not Found")
-                .build();
-            defer allocator.free(httpResponse);
-            try connection.stream.writeAll(httpResponse);
-            return;
-        };
-        defer file.close();
+        switch (request.method) {
+            .GET => {
+                const file = std.fs.cwd().openFile(fullPath, .{}) catch {
+                    const httpResponse = try response
+                        .setStatusCode("404")
+                        .setStatusMessage("Not Found")
+                        .build();
+                    defer allocator.free(httpResponse);
+                    try connection.stream.writeAll(httpResponse);
+                    return;
+                };
+                defer file.close();
 
-        const fileSize = try file.getEndPos();
-        const body = try file.readToEndAlloc(allocator, fileSize);
-        defer allocator.free(body);
-        const httpResponse = try response
-            .setStatusCode("200")
-            .setStatusMessage("OK")
-            .setBody(body)
-            .addHeader("Content-Type", "application/octet-stream")
-            .build();
-        defer allocator.free(httpResponse);
-        try connection.stream.writeAll(httpResponse);
+                const fileSize = try file.getEndPos();
+                const body = try file.readToEndAlloc(allocator, fileSize);
+                defer allocator.free(body);
+                const httpResponse = try response
+                    .setStatusCode("200")
+                    .setStatusMessage("OK")
+                    .setBody(body)
+                    .addHeader("Content-Type", "application/octet-stream")
+                    .build();
+                defer allocator.free(httpResponse);
+                try connection.stream.writeAll(httpResponse);
+            },
+            .POST => {
+                const newFile = try std.fs.cwd().createFile(fullPath, .{});
+                defer newFile.close();
+
+                const body = request.body.?;
+                try newFile.writeAll(body);
+
+                const httpResponse = try response
+                    .setStatusCode("201")
+                    .setStatusMessage("Created")
+                    .build();
+
+                defer allocator.free(httpResponse);
+                try connection.stream.writeAll(httpResponse);
+            },
+            else => return error.InvalidMethod,
+        }
     } else {
         const httpResponse = try response.setStatusCode("404").setStatusMessage("Not Found").build();
         defer allocator.free(httpResponse);
