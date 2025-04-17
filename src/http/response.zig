@@ -39,6 +39,12 @@ pub const Response = struct {
             _ = self.addHeader("Content-Encoding", self.compression_type.toString());
         }
 
+        if (request.getHeader("Connection")) |connection_header| {
+            if (std.ascii.eqlIgnoreCase(connection_header.single, "close")) {
+                _ = self.addHeader("Connection", "close");
+            }
+        }
+
         return self;
     }
     pub fn deinit(self: *Self) void {
