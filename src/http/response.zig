@@ -1,3 +1,11 @@
+const std = @import("std");
+const mem = std.mem;
+const ArrayList = std.ArrayList;
+
+const compression = @import("../compression.zig");
+const Compressor = compression.Compressor;
+const CompressionType = compression.CompressionType;
+
 const Request = @import("./request.zig").Request;
 
 pub const Response = struct {
@@ -8,11 +16,13 @@ pub const Response = struct {
     body: ?[]const u8,
     allocator: mem.Allocator,
     request: Request,
+    compression_type: CompressionType,
+    compressor: Compressor,
 
     const Self = @This();
 
     pub fn init(allocator: mem.Allocator, request: Request) Self {
-        return Self{
+        var self = Self{
             .httpVersion = "HTTP/1.1",
             .statusCode = undefined,
             .statusMessage = undefined,
@@ -20,10 +30,41 @@ pub const Response = struct {
             .body = null,
             .allocator = allocator,
             .request = request,
+            .compression_type = .None,
+            .compressor = Compressor.init(allocator),
         };
+
+        self.compression_type = self.negotiateCompression();
+        if (self.compression_type != .None) {
+            _ = self.addHeader("Content-Encoding", self.compression_type.toString());
+        }
+
+        return self;
     }
     pub fn deinit(self: *Self) void {
         self.headers.deinit();
+    }
+
+    fn negotiateCompression(self: *Self) CompressionType {
+        if (self.request.getHeader("Accept-Encoding")) |accept_encoding| {
+            // Handle the existing HeaderValue API (single or multiple)
+            switch (accept_encoding) {
+                .single => {
+                    if (CompressionType.fromString(accept_encoding.single)) |compression_type| {
+                        return compression_type;
+                    }
+                },
+                .multiple => {
+                    // Check each encoding type in the array
+                    for (accept_encoding.multiple.items) |encoding| {
+                        if (CompressionType.fromString(encoding)) |compression_type| {
+                            return compression_type;
+                        }
+                    }
+                },
+            }
+        }
+        return .None;
     }
 
     pub fn setStatusCode(self: *Self, statusCode: []const u8) *Self {
@@ -42,7 +83,25 @@ pub const Response = struct {
     }
 
     pub fn setBody(self: *Self, body: []const u8) *Self {
-        self.body = body;
+        if (self.compression_type != .None) {
+            const compressed_body = self.compressor.compress(body, self.compression_type) catch |err| {
+                std.log.err("Compression failed: {}", .{err});
+                self.compression_type = .None;
+                _ = self.headers.remove("Content-Encoding");
+                self.body = body;
+                return self;
+            };
+
+            self.body = compressed_body;
+        } else {
+            self.body = body;
+        }
+
+        if (self.body) |response_body| {
+            const length = std.fmt.allocPrint(self.allocator, "{d}", .{response_body.len}) catch unreachable;
+            _ = self.addHeader("Content-Length", length);
+        }
+
         return self;
     }
 
@@ -50,22 +109,6 @@ pub const Response = struct {
         var result = ArrayList(u8).init(self.allocator);
         errdefer result.deinit();
 
-        if (self.request.getHeader("Accept-Encoding")) |accept_encoding| {
-            switch (accept_encoding) {
-                .single => {
-                    if (mem.eql(u8, accept_encoding.single, "gzip")) {
-                        _ = self.addHeader("Content-Encoding", "gzip");
-                    }
-                },
-                .multiple => {
-                    for (accept_encoding.multiple.items) |encoding| {
-                        if (mem.eql(u8, encoding, "gzip")) {
-                            _ = self.addHeader("Content-Encoding", "gzip");
-                        }
-                    }
-                },
-            }
-        }
         result.appendSlice(self.httpVersion) catch unreachable;
         result.appendSlice(" ") catch unreachable;
         result.appendSlice(self.statusCode) catch unreachable;
@@ -81,27 +124,14 @@ pub const Response = struct {
             result.appendSlice("\r\n") catch unreachable;
         }
 
-        if (self.body) |body| {
-            const content_length = std.fmt.allocPrint(self.allocator, "{d}", .{body.len}) catch unreachable;
-            defer self.allocator.free(content_length);
-            result.appendSlice("Content-Length: ") catch unreachable;
-            result.appendSlice(content_length) catch unreachable;
-            result.appendSlice("\r\n") catch unreachable;
-        }
-        // Empty line separating headers from body
         result.appendSlice("\r\n") catch unreachable;
 
-        // Body
         if (self.body) |body| {
             result.appendSlice(body) catch unreachable;
         }
         return result.toOwnedSlice() catch unreachable;
     }
 };
-
-const std = @import("std");
-const mem = std.mem;
-const ArrayList = std.ArrayList;
 
 test "simple response" {
     const allocator = std.testing.allocator;
