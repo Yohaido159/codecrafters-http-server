@@ -51,12 +51,21 @@ pub const Response = struct {
         errdefer result.deinit();
 
         if (self.request.getHeader("Accept-Encoding")) |accept_encoding| {
-            if (mem.eql(u8, accept_encoding, "gzip")) {
-                _ = self.addHeader("Content-Encoding", "gzip");
+            switch (accept_encoding) {
+                .single => {
+                    if (mem.eql(u8, accept_encoding.single, "gzip")) {
+                        _ = self.addHeader("Content-Encoding", "gzip");
+                    }
+                },
+                .multiple => {
+                    for (accept_encoding.multiple.items) |encoding| {
+                        if (mem.eql(u8, encoding, "gzip")) {
+                            _ = self.addHeader("Content-Encoding", "gzip");
+                        }
+                    }
+                },
             }
         }
-        //
-        // Status line
         result.appendSlice(self.httpVersion) catch unreachable;
         result.appendSlice(" ") catch unreachable;
         result.appendSlice(self.statusCode) catch unreachable;

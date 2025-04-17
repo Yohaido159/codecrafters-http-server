@@ -1,4 +1,9 @@
+const std = @import("std");
+const mem = std.mem;
+const testing = std.testing;
+
 const HttpError = @import("./http.zig").HttpError;
+
 pub const Request = struct {
     allocator: mem.Allocator,
     method: HttpMethod,
@@ -22,6 +27,9 @@ pub const Request = struct {
         };
     }
     pub fn deinit(self: *Self) void {
+        for (self.headers.items) |*header| {
+            header.deinit();
+        }
         self.headers.deinit();
     }
 
@@ -77,12 +85,31 @@ pub const Request = struct {
         const separator_idx = mem.indexOf(u8, line, ":") orelse return error.InvalidHeader;
 
         const name = mem.trim(u8, line[0..separator_idx], " ");
-        const value = mem.trim(u8, line[separator_idx + 1 ..], " ");
+        const raw_value = mem.trim(u8, line[separator_idx + 1 ..], " ");
 
-        try self.headers.append(HttpHeader{ .name = name, .value = value });
+        if (mem.indexOf(u8, raw_value, ",") != null) {
+            var values = std.ArrayList([]const u8).init(self.allocator);
+            errdefer values.deinit();
+
+            var value_iter = mem.splitAny(u8, raw_value, ",");
+            while (value_iter.next()) |val| {
+                const trimmed_val = mem.trim(u8, val, " ");
+                try values.append(trimmed_val);
+            }
+            try self.headers.append(HttpHeader{
+                .name = name,
+                .value = HeaderValue{ .multiple = values },
+            });
+        } else {
+            // Add header with single value
+            try self.headers.append(HttpHeader{
+                .name = name,
+                .value = HeaderValue{ .single = raw_value },
+            });
+        }
     }
 
-    pub fn getHeader(self: Self, name: []const u8) ?[]const u8 {
+    pub fn getHeader(self: Self, name: []const u8) ?HeaderValue {
         for (self.headers.items) |header| {
             if (mem.eql(u8, header.name, name)) {
                 return header.value;
@@ -92,12 +119,12 @@ pub const Request = struct {
     }
 
     pub fn getContentType(self: Self) ?[]const u8 {
-        return self.getHeader("Content-Type");
+        return self.getHeader("Content-Type").?.single;
     }
 
     pub fn getContentLength(self: Self) ?usize {
         const content_length_str = self.getHeader("Content-Length") orelse return null;
-        return std.fmt.parseInt(usize, content_length_str, 10) catch null;
+        return std.fmt.parseInt(usize, content_length_str.single, 10) catch null;
     }
 
     pub fn debugPrint(self: Self) void {
@@ -118,7 +145,19 @@ pub const Request = struct {
         // Print headers
         stdout.print("\n--- Headers ({d}) ---\n", .{self.headers.items.len}) catch {};
         for (self.headers.items) |header| {
-            stdout.print("{s}: {s}\n", .{ header.name, header.value }) catch {};
+            switch (header.value) {
+                .single => |value| {
+                    stdout.print("{s}: {s}\n", .{ header.name, value }) catch {};
+                },
+                .multiple => |list| {
+                    stdout.print("{s}: [", .{header.name}) catch {};
+                    for (list.items, 0..) |value, i| {
+                        if (i > 0) stdout.print(", ", .{}) catch {};
+                        stdout.print("{s}", .{value}) catch {};
+                    }
+                    stdout.print("]\n", .{}) catch {};
+                },
+            }
         }
 
         // Print body if present
@@ -156,12 +195,27 @@ pub const HttpMethod = enum {
 
 pub const HttpHeader = struct {
     name: []const u8,
-    value: []const u8,
+    value: HeaderValue,
+
+    pub fn deinit(self: *HttpHeader) void {
+        self.value.deinit();
+    }
 };
 
-const std = @import("std");
-const mem = std.mem;
-const testing = std.testing;
+pub const HeaderValue = union(enum) {
+    single: []const u8,
+    multiple: std.ArrayList([]const u8),
+
+    pub fn deinit(self: *HeaderValue) void {
+        switch (self.*) {
+            .single => {}, // No need to free single value as it points to request data
+            .multiple => |*list| {
+                // We don't free individual strings as they point to request data
+                list.deinit();
+            },
+        }
+    }
+};
 
 test "parse HTTP request" {
     const request_str =
@@ -182,9 +236,9 @@ test "parse HTTP request" {
     try testing.expectEqualStrings("/path/to/resource", req.path);
     try testing.expectEqualStrings("param1=value1&param2=value2", req.query_string.?);
     try testing.expectEqualStrings("HTTP/1.1", req.version);
-    try testing.expectEqualStrings("example.com", req.getHeader("Host").?);
-    try testing.expectEqualStrings("Mozilla/5.0", req.getHeader("User-Agent").?);
-    try testing.expectEqualStrings("text/html", req.getHeader("Accept").?);
+    try testing.expectEqualStrings("example.com", req.getHeader("Host").?.single);
+    try testing.expectEqualStrings("Mozilla/5.0", req.getHeader("User-Agent").?.single);
+    try testing.expectEqualStrings("text/html", req.getHeader("Accept").?.single);
     try testing.expectEqualStrings("Some request body content", req.body.?);
 }
 
@@ -220,8 +274,8 @@ test "parse HTTP POST request" {
 
     try testing.expectEqual(HttpMethod.POST, req.method);
     try testing.expectEqualStrings("/submit-form", req.path);
-    try testing.expectEqualStrings("application/x-www-form-urlencoded", req.getHeader("Content-Type").?);
-    try testing.expectEqualStrings("27", req.getHeader("Content-Length").?);
+    try testing.expectEqualStrings("application/x-www-form-urlencoded", req.getHeader("Content-Type").?.single);
+    try testing.expectEqualStrings("27", req.getHeader("Content-Length").?.single);
     try testing.expectEqualStrings("username=john&password=secret", req.body.?);
 }
 
@@ -241,7 +295,7 @@ test "parse HTTP PUT request" {
 
     try testing.expectEqual(HttpMethod.PUT, req.method);
     try testing.expectEqualStrings("/api/resources/123", req.path);
-    try testing.expectEqualStrings("application/json", req.getHeader("Content-Type").?);
+    try testing.expectEqualStrings("application/json", req.getHeader("Content-Type").?.single);
     try testing.expectEqualStrings("{\"name\":\"Updated Item\"}", req.body.?);
 }
 
@@ -277,7 +331,7 @@ test "parse HTTP PATCH request" {
 
     try testing.expectEqual(HttpMethod.PATCH, req.method);
     try testing.expectEqualStrings("/api/resources/123", req.path);
-    try testing.expectEqualStrings("application/json", req.getHeader("Content-Type").?);
+    try testing.expectEqualStrings("application/json", req.getHeader("Content-Type").?.single);
     try testing.expectEqualStrings("{\"status\":\"in_progress\"}", req.body.?);
 }
 

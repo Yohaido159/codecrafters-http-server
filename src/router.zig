@@ -11,9 +11,11 @@ const Response = http.Response;
 const HttpStatus = http.HttpStatus;
 const HttpMethod = http.HttpMethod;
 const HttpError = http.HttpError;
+const HeaderValue = http.HeaderValue;
 
 pub fn handleRequest(allocator: mem.Allocator, connection: Connection, request: Request, directory: ?[]const u8) HttpError!void {
     log.debug("Processing request for path: {s}", .{request.path});
+    request.debugPrint();
 
     if (mem.eql(u8, request.path, "/")) {
         try handleRoot(allocator, connection, request);
@@ -67,12 +69,12 @@ fn handleUserAgent(allocator: mem.Allocator, connection: Connection, request: Re
     var response = Response.init(allocator, request);
     defer response.deinit();
 
-    const user_agent = request.getHeader("User-Agent") orelse "Unknown User-Agent";
+    const user_agent = request.getHeader("User-Agent") orelse HeaderValue{ .single = "Unknown User-Agent" };
 
     const http_response = response
         .setStatusCode(HttpStatus.OK)
         .setStatusMessage(HttpStatus.getMessage(HttpStatus.OK))
-        .setBody(user_agent)
+        .setBody(user_agent.single)
         .addHeader("Content-Type", "text/plain")
         .build();
     defer allocator.free(http_response);
