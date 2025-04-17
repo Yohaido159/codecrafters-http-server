@@ -87,7 +87,35 @@ pub const Request = struct {
         const name = mem.trim(u8, line[0..separator_idx], " ");
         const raw_value = mem.trim(u8, line[separator_idx + 1 ..], " ");
 
-        if (mem.indexOf(u8, raw_value, ",") != null) {
+        const multi_value_headers = &[_][]const u8{
+            "accept",
+            "accept-charset",
+            "accept-encoding",
+            "accept-language",
+            "allow",
+            "cache-control",
+            "connection",
+            "content-encoding",
+            "content-language",
+            "vary",
+            "via",
+        };
+
+        var name_lower = try self.allocator.alloc(u8, name.len);
+        defer self.allocator.free(name_lower);
+        for (name, 0..) |c, i| {
+            name_lower[i] = std.ascii.toLower(c);
+        }
+
+        var is_multi_value = false;
+        for (multi_value_headers) |multi_header| {
+            if (mem.eql(u8, name_lower, multi_header)) {
+                is_multi_value = true;
+                break;
+            }
+        }
+
+        if (is_multi_value and mem.indexOf(u8, raw_value, ",") != null) {
             var values = std.ArrayList([]const u8).init(self.allocator);
             errdefer values.deinit();
 
